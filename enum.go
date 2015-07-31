@@ -20,8 +20,8 @@ func IsGoodEnum(idx interface{}) bool {
 type EnumBinding []string
 
 // todo: reutrn string and error
-func (this EnumBinding) EntryShow(idx interface{}) string {
-	if nil==this {
+func (me EnumBinding) EntryShow(idx interface{}) string {
+	if nil==me {
 		return Empty
 	}
 	
@@ -34,5 +34,5 @@ func (this EnumBinding) EntryShow(idx interface{}) string {
 		return Empty
 	}
 	
-	return this[e.Int()]
+	return me[e.Int()]
 }
