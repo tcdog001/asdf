@@ -39,6 +39,14 @@ func (me Mac) ToStringL(ifs byte) string {
 			me[5])
 }
 
+func (me Mac) ToStringLU() string {
+	return me.ToStringL(MacSepUnix)
+}
+
+func (me Mac) ToStringLW() string {
+	return me.ToStringL(MacSepWindows)
+}
+
 func (me Mac) ToStringM(ifs byte) string {
 	return fmt.Sprintf("%x%x%c%x%x%c%x%x",
 			me[0], me[1], ifs,
@@ -46,7 +54,15 @@ func (me Mac) ToStringM(ifs byte) string {
 			me[4], me[5])
 }
 
-func (me Mac) ToStringS(ifs byte) string {
+func (me Mac) ToStringMU() string {
+	return me.ToStringM(MacSepUnix)
+}
+
+func (me Mac) ToStringMW() string {
+	return me.ToStringM(MacSepWindows)
+}
+
+func (me Mac) ToStringS() string {
 	return fmt.Sprintf("%x%x%x%x%x%x",
 			me[0], me[1],
 			me[2], me[3],
@@ -54,7 +70,7 @@ func (me Mac) ToStringS(ifs byte) string {
 }
 
 func (me Mac) ToString() string {
-	return me.ToStringL(MacSepUnix)
+	return me.ToStringLU()
 }
 
 func macFromString(mac Mac, s string) error {
