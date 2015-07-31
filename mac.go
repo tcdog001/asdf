@@ -7,8 +7,9 @@ import (
 const (
 	MacSize 		= 6
 	
-	MacStringShort 	= 12
-	MacstringLong	= 17
+	MacStringS 		= 12 // AABBCCDDEEFF
+	MacStringM 		= 14 // AABB-CCDD-EEFF
+	MacStringL		= 17 // AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF
 	
 	MacSepWindows 	= '-'
 	MacSepUnix 		= ':'
@@ -28,41 +29,76 @@ func (me Mac) Eq(it interface{}) bool {
 	return Slice(me).Eq(it)
 }
 
-func (me Mac) ToStringBy(sep byte) string {
-	return fmt.Sprintf("%d%c%d%c%d%c%d%c%d%c%d",
-			me[0], sep,
-			me[1], sep,
-			me[2], sep,
-			me[3], sep,
-			me[4], sep,
+func (me Mac) ToStringL(ifs byte) string {
+	return fmt.Sprintf("%x%c%x%c%x%c%x%c%x%c%x",
+			me[0], ifs,
+			me[1], ifs,
+			me[2], ifs,
+			me[3], ifs,
+			me[4], ifs,
 			me[5])
 }
 
-func (me Mac) ToString() string {
-	return me.ToStringBy(MacSepUnix)
+func (me Mac) ToStringM(ifs byte) string {
+	return fmt.Sprintf("%x%x%c%x%x%c%x%x",
+			me[0], me[1], ifs,
+			me[2], me[3], ifs,
+			me[4], me[5])
 }
 
-func isGoodMacSepChar(sep byte) bool {
-	return sep==MacSepUnix || sep==MacSepWindows
+func (me Mac) ToStringS(ifs byte) string {
+	return fmt.Sprintf("%x%x%x%x%x%x",
+			me[0], me[1],
+			me[2], me[3],
+			me[4], me[5])
+}
+
+func (me Mac) ToString() string {
+	return me.ToStringL(MacSepUnix)
 }
 
 func macFromString(mac Mac, s string) error {
 	Len := len(s)
 	b   := []byte(s)
 	
-	if Len==MacstringLong { // AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF
+	if MacStringL==Len { // AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF
+		ifs := b[2]
+		fmt.Println("Mac ifs unix windows", 
+			ifs, MacSepUnix, MacSepWindows)
+
+		if (ifs!=MacSepUnix && ifs!=MacSepWindows) ||
+			ifs!=b[5] ||
+			ifs!=b[8] ||
+			ifs!=b[11] ||
+			ifs!=b[14] {
+				
+			return Error
+		}
+		
 		for i:=0; i<6; i++ {
-			idx := 3*i - 1
-			if i<5 && false==isGoodMacSepChar(b[idx]) {
-				return Error
-			}
-			if _, err := hex.Decode(mac[i:], b[idx:idx+2]); nil!=err {
+			if _, err := hex.Decode(mac[i:], b[3*i:3*i+2]); nil!=err {
 				return err
 			}
 		}
 		
 		return nil
-	} else if Len==MacStringShort { // AABBCCDDEEFF
+	} else if MacStringM==Len { // AABB-CCDD-EEFF or AABB:CCDD:EEFF
+		ifs := b[4]
+		
+		if (ifs!=MacSepUnix && ifs!=MacSepWindows) ||
+			ifs!=b[9] {
+			return Error
+		}
+		
+		for i:=0; i<3; i++ {
+			if _, err := hex.Decode(mac[2*i:], b[5*i:5*i+2]); nil!=err {
+				return err
+			}
+			if _, err := hex.Decode(mac[2*i+1:], b[5*i+2:5*i+4]); nil!=err {
+				return err
+			}
+		}
+	} else if MacStringS==Len { // AABBCCDDEEFF
 		_, err := hex.Decode(mac[:], b)
 		
 		return err
@@ -79,6 +115,7 @@ func (me Mac) FromString(s string) error {
 	}
 	
 	copy(me, mac[:])
+
 	return nil
 }
 

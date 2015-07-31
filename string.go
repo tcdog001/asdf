@@ -1,3 +1,8 @@
 package asdf
 
-const Empty string = ""
+const (
+	Empty 	= ""
+	Crlf  	= "\n"
+	Space   = " "
+	Tab 	= "    "
+)
