@@ -17,6 +17,7 @@ func IsGoodEnum(idx interface{}) bool {
 	return v >= n.Begin() && v < n.End()
 }
 
+
 type EnumBinding []string
 
 // todo: reutrn string and error
