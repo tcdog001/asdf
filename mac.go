@@ -79,8 +79,6 @@ func macFromString(mac Mac, s string) error {
 	
 	if MacStringL==Len { // AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF
 		ifs := b[2]
-		fmt.Println("Mac ifs unix windows", 
-			ifs, MacSepUnix, MacSepWindows)
 
 		if (ifs!=MacSepUnix && ifs!=MacSepWindows) ||
 			ifs!=b[5] ||
