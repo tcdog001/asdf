@@ -13,6 +13,7 @@ var ErrNoSpace 		= errors.New("no space")
 
 var ErrBadObj 		= errors.New("bad obj")
 var ErrNilObj 		= errors.New("nil obj")
+var ErrNilBuffer 	= errors.New("nil buffer")
 
 var ErrTooShortBuffer 	= errors.New("too short buffer")
 var ErrBadPktLen 		= errors.New("invalid packet length")
