@@ -30,7 +30,7 @@ func (me Mac) Eq(it interface{}) bool {
 }
 
 func (me Mac) ToStringL(ifs byte) string {
-	return fmt.Sprintf("%x%c%x%c%x%c%x%c%x%c%x",
+	return fmt.Sprintf("%.2x%c%.2x%c%.2x%c%.2x%c%.2x%c%.2x",
 			me[0], ifs,
 			me[1], ifs,
 			me[2], ifs,
@@ -48,7 +48,7 @@ func (me Mac) ToStringLW() string {
 }
 
 func (me Mac) ToStringM(ifs byte) string {
-	return fmt.Sprintf("%x%x%c%x%x%c%x%x",
+	return fmt.Sprintf("%.2x%.2x%c%.2x%.2x%c%.2x%.2x",
 			me[0], me[1], ifs,
 			me[2], me[3], ifs,
 			me[4], me[5])
