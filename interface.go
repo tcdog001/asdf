@@ -59,6 +59,14 @@ type INext interface {
 	Next() interface{}
 }
 
+type IReverse interface {
+	Reverse() []interface{}
+}
+
+type IRepeat interface {
+	Repeat(int) []interface{}
+}
+
 type IToString interface {
 	ToString() string
 }
@@ -79,14 +87,6 @@ type IGood interface {
 	IsGood() bool
 }
 
-type IReverse interface {
-	Reverse() []interface{}
-}
-
-type IRepeat interface {
-	Repeat(int) []interface{}
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // combination interface
 ////////////////////////////////////////////////////////////////////////////////
@@ -100,9 +100,34 @@ type INumber interface {
 	IInt
 }
 
-type IObjBinary interface {
+type IString interface {
+	IToString
+	IFromString
+}
+
+type IBinary interface {
 	IToBinary
 	IFromBinary
+}
+
+type ICompare interface {
+	IEq
+	IGt
+}
+
+type IList interface {
+	IFirst
+	ILast
+	
+	ITails
+	IHead
+	
+	IReverse
+}
+
+type IListNode interface {
+	IPrev
+	INext
 }
 
 type ILogger interface {
