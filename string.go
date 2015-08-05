@@ -1,8 +1,8 @@
 package asdf
 
 const (
-	Empty 	= ""
-	Crlf  	= "\n"
-	Space   = " "
-	Tab 	= "    "
+	Empty = ""
+	Crlf  = "\n"
+	Space = " "
+	Tab   = "    "
 )

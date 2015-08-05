@@ -13,7 +13,7 @@ func IsGoodEnum(idx interface{}) bool {
 		return false
 	}
 	v := n.Int()
-	
+
 	return v >= n.Begin() && v < n.End()
 }
 
@@ -21,18 +21,18 @@ type EnumBinding []string
 
 // todo: reutrn string and error
 func (me EnumBinding) EntryShow(idx interface{}) string {
-	if nil==me {
+	if nil == me {
 		return Empty
 	}
-	
-	e, ok := idx.(IEnum);
+
+	e, ok := idx.(IEnum)
 	if !ok {
 		return Empty
 	}
-	
+
 	if !e.IsGood() {
 		return Empty
 	}
-	
+
 	return me[e.Int()]
 }
