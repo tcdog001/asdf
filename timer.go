@@ -2,6 +2,7 @@ package asdf
 
 import (
 	"container/list"
+	"fmt"
 )
 
 const (
@@ -18,34 +19,54 @@ const (
 type TimerCallback func(entry interface{}) (bool, error)
 
 type ITimer interface {
-	GetTimer(Type uint) interface{}
+	GetTimer(entry interface{}, tag uint) *Timer
+	Name() string
 }
 
-type tmNode struct {
+type Timer struct {
 	cb 		TimerCallback
 	
+	tag 	uint
 	flag	uint
 	slot 	uint	// ring slot
 	expires	uint
 	create	uint64
 	
 	ring 	*tmRing
-	node *list.Element
+	node 	*list.Element
+	father 	interface{}
 }
 
-func (me *tmNode) IsCycle() bool {
+func (me *Timer) dump() {
+	if *me.ring.clock.debug {
+		iTimer, ok := me.father.(ITimer)
+		if !ok {
+			return
+		}
+		
+		fmt.Printf("timer(%s) tag(%d) ring(%d) slot(%d) expires(%d) create(%ld)" + Crlf, 
+			iTimer.Name(),
+			me.tag,
+			me.ring.idx,
+			me.slot,
+			me.expires,
+			me.create)
+	}
+}
+
+func (me *Timer) IsCycle() bool {
 	return tm_CYCLE==(tm_CYCLE & me.flag)
 }
 
-func (me *tmNode) IsPending() bool {
+func (me *Timer) IsPending() bool {
 	return tm_PENDING==(tm_PENDING & me.flag)
 }
 
-func (me *tmNode) Clock() *Clock {
+func (me *Timer) Clock() *Clock {
 	return me.ring.clock
 }
 
-func (me *tmNode) Left() uint {
+func (me *Timer) Left() uint {
 	timeout := me.create + uint64(me.expires)
 	
 	if timeout > me.Clock().ticks {
@@ -55,7 +76,53 @@ func (me *tmNode) Left() uint {
 	return 0
 }
 
-func (me *tmNode) FindRing() (uint, *tmRing) {
+func (me *Timer) UnCycle() {
+	me.flag &= ^tm_CYCLE
+}
+
+func (me *Timer) Cycle() {
+	me.flag |= tm_CYCLE
+}
+
+func (me *Timer) ChangeExpires(expires uint/* ticks */) error {
+	if nil==me {
+		return ErrNilObj
+	}
+	
+	if me.IsCycle() {
+		me.expires = expires
+		
+		return nil
+	}
+	
+	return ErrNoSupport
+}
+
+func (me *Timer) Change(after uint/* ticks */) error {
+	if nil==me {
+		return ErrNilObj
+	}
+	
+	if me.IsPending() {
+		left := me.Left()
+		
+		me.remove()
+		
+		if after > left {
+			me.expires += after - left
+		} else {
+			me.expires -= left - after
+		}
+		
+		me.insert()
+		
+		return nil
+	}
+	
+	return ErrNoExist
+}
+
+func (me *Timer) findRing() (uint, *tmRing) {
 	left := me.Left()
 	
 	offset := uint(0)
@@ -76,36 +143,26 @@ func (me *tmNode) FindRing() (uint, *tmRing) {
 	}
 	
 	r := me.Clock().ringX(idx)
-
+	
 	return (r.current + offset) & tm_MASK, r
 }
 
-func (me *tmNode) Insert() error {
-	slot, r := me.FindRing()
+func (me *Timer) insert() {
+	slot, r := me.findRing()
 	
 	me.node = r.List(slot).PushFront(me)
 	me.slot = slot
+	me.ring = r
 	me.flag |= tm_PENDING
-	
-	if me.Clock().ticks > 0 {
-		// test ???
-	}
-	
-	return nil
 }
 
-func (me *tmNode) Remove() error {
+func (me *Timer) remove() {
 	r := me.ring
-	
-	if me.Clock().ticks > 0 {
-		// test ???
-	}
 	
 	r.List(me.slot).Remove(me.node)
 	me.node = nil
+	me.ring = nil
 	me.flag &= ^tm_PENDING
-	
-	return nil
 }
 
 type tmRing struct {
@@ -117,8 +174,88 @@ type tmRing struct {
 	clock 	*Clock
 }
 
-func (me *tmRing) List(idx uint) *list.List {
-	return &me.list[idx]
+func (me *tmRing) Init(idx uint, clock *Clock) {
+	me.idx 		= idx
+	me.clock 	= clock
+	me.current 	= 0
+	
+	for i:=uint(0); i<tm_SLOT; i++ {
+		me.List(i).Init()
+	}
+}
+
+func (me *tmRing) List(slot uint) *list.List {
+	return &me.list[slot]
+}
+
+func (me *tmRing) dumpList(slot uint) {
+	if Len := me.List(slot).Len(); Len > 0 && *me.clock.debug {
+		for e := me.List(me.current).Front(); e != nil; e = e.Next() {
+			if t, ok := e.Value.(*Timer); ok {
+				t.dump()
+			}
+		}
+	}
+}
+
+func (me *tmRing) dump() {
+	fmt.Printf("ring(%d) current(%d)" + Crlf, 
+		me.idx,
+		me.current)
+	
+	for i:=uint(0); i<tm_SLOT; i++ {
+		me.dumpList(i)
+	}
+}
+
+func (me *tmRing) trigger() uint {
+	count := uint(0)
+	
+	var next *list.Element
+	for e := me.List(me.current).Front(); e != nil; e = next {
+		next = e.Next()
+		
+		t, ok := e.Value.(*Timer)
+		if !ok {
+			continue
+		}
+		
+		if t.Left() > 0 {
+			t.insert()
+			
+			continue
+		}
+		
+		if safe, err := t.cb(t.father); nil==err {
+			count++
+		} else if !safe {
+			continue
+		}
+		
+		if t.IsCycle() {
+			t.create = t.Clock().ticks
+			t.insert()
+		}
+	}
+	
+	return count
+}
+
+func (me *tmRing) Trigger() uint {
+	count := uint(0)	
+	
+	me.current++
+	me.current &= tm_MASK
+	
+	count += me.trigger()
+	
+	if idx := me.idx; 0==me.current && idx < tm_RINGMAX {
+		r := me.clock.ringX(idx)
+		
+		count += r.trigger()
+	}
+	
+	return count
 }
 
 type Clock struct {
@@ -127,6 +264,8 @@ type Clock struct {
 	
 	ring 	[tm_RING]tmRing
 	unit 	uint
+	Type 	uint
+	debug 	*bool
 }
 
 func (me *Clock) ringX(idx uint) *tmRing {
@@ -153,78 +292,86 @@ func (me *Clock) GetUnit() uint {
 	return me.unit
 }
 
-func (me *Clock) Trigger(times uint) error {
-	return nil
+func (me *Clock) Trigger(times uint) uint {
+	count := uint(0)
+	
+	for i:=uint(0); i<times; i++ {
+		me.ticks++
+		
+		count += me.ring0().Trigger()
+	}
+	
+	return count
 }
 
 func (me *Clock) Insert(
-		entry interface{}, 
+		entry interface{},
+		tag uint,
 		after uint, 
 		cb TimerCallback, 
-		Cycle bool) (interface{}, error) {
-	if _, ok := entry.(ITimer); !ok {
+		Cycle bool) (*Timer, error) {
+	if nil==entry {
+		return nil, ErrNilObj
+	}
+	
+	if nil==cb {
+		return nil, ErrNilObj
+	}
+	
+	var t *Timer
+	if iTimer, ok := entry.(ITimer); !ok {
+		return nil, ErrBadIntf
+	} else if t = iTimer.GetTimer(entry, tag); nil==t {
 		return nil, ErrBadIntf
 	}
-
+	
 	flag := uint(0)
 	if Cycle {
 		flag = tm_CYCLE
 	}
 	
-	t := &tmNode{
-		cb:cb,
-		create:me.ticks,
-		expires:after,
-		flag:flag,
-	}
+	t.cb 		= cb
+	t.tag 		= tag
+	t.create	= me.ticks
+	t.expires	= after
+	t.flag 		= flag
+	t.father	= entry
 	
-	if err := t.Insert(); nil!=err {
-		return nil, err
-	}
+	t.insert()
 	
 	return t, nil
 }
 
-func (me *Clock) Remove(entry interface{}, Type uint) error {
-	t, err := tmNodeGet(entry, Type)
-	if nil!=err {
-		return err
+func (me *Clock) Remove(entry interface{}) error {
+	t, ok := entry.(*Timer)
+	if !ok {
+		return ErrBadType
 	}
 	
-	return t.Remove()
+	t.remove()
+	t.father = nil
+	
+	return nil
 }
 
-func tmNodeGet(entry interface{}, Type uint) (*tmNode, error) {
-	var iEntry ITimer
-	var ok bool
-	var t *tmNode
-	
-	iEntry, ok = entry.(ITimer)
-	if !ok {
-		return nil, ErrBadIntf
+func (me *Clock) dump() {
+	if *me.debug {
+		fmt.Println("======================")
+		for i:=uint(0); i<tm_RING; i++ {
+			me.ringX(i).dump()
+		}
+		
+		fmt.Println("======================")
 	}
-	
-	t, ok = iEntry.GetTimer(Type).(*tmNode)
-	if !ok {
-		return nil, ErrBadType
-	}
-	
-	return t, nil
 }
 
-func TmClock() *Clock {
-	c := &Clock{}
+func TmClock(debug *bool) *Clock {
+	c := &Clock{
+		debug:debug,
+	}
 	
 	for i:=uint(0); i<tm_RING; i++ {
-		r := c.ringX(i)
-		
-		r.idx = i
-		r.clock = c
-		r.current = 0
-		
-		for j:=uint(0); j<tm_SLOT; j++ {
-			r.List(j).Init()
-		}
+		c.ringX(i).Init(i, c)
 	}
 	
 	return c
