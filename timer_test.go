@@ -49,7 +49,7 @@ func testInit() {
 func TestTimer(t *testing.T) {
 	testInit()
 	
-	for i:=0;;i++ {
+	for i:=0;i<count;i++ {
 		time.Sleep(1)
 		
 		clock.Trigger(1)
