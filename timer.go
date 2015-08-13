@@ -16,11 +16,11 @@ const (
 	tm_CYCLE 	uint = 2
 )
 
-type TimerCallback func(entry interface{}) (bool, error)
+type TimerCallback func(entry interface{}) (bool/* safe */, error)
 
 type ITimer interface {
 	GetTimer(tag uint) *Timer
-	Name() string
+	Name(tag uint) string
 }
 
 type Timer struct {
@@ -29,8 +29,8 @@ type Timer struct {
 	tag 	uint
 	flag	uint
 	slot 	uint	// ring slot
-	expires	uint
-	create	uint64
+	expires	uint	// ticks
+	create	uint64	// ticks
 	
 	ring 	*tmRing
 	clock 	*Clock
@@ -47,7 +47,7 @@ func (me *Timer) dump(action string) {
 		if iTimer, ok := me.father.(ITimer); ok {
 			fmt.Printf("%s timer(%s) tag(%d) ring(%d) slot(%d) expires(%d) create(%d)" + Crlf, 
 				action,
-				iTimer.Name(),
+				iTimer.Name(me.tag),
 				me.tag,
 				me.ring.idx,
 				me.slot,
@@ -57,12 +57,12 @@ func (me *Timer) dump(action string) {
 	}
 }
 
-func (me *Timer) IsCycle() bool {
-	return tm_CYCLE==(tm_CYCLE & me.flag)
-}
-
 func (me *Timer) IsPending() bool {
 	return tm_PENDING==(tm_PENDING & me.flag)
+}
+
+func (me *Timer) IsCycle() bool {
+	return tm_CYCLE==(tm_CYCLE & me.flag)
 }
 
 func (me *Timer) UnCycle() {
@@ -73,7 +73,7 @@ func (me *Timer) Cycle() {
 	me.flag |= tm_CYCLE
 }
 
-func (me *Timer) Left() uint {
+func (me *Timer) left() uint /* ticks */ {
 	timeout := me.create + uint64(me.expires)
 	
 	ticks := me.clock.ticks
@@ -84,13 +84,18 @@ func (me *Timer) Left() uint {
 	return 0
 }
 
-func (me *Timer) Change(after uint/* ticks */) error {
+func (me *Timer) Left() uint /* ms */ {
+	return me.left() * me.clock.unit // ticks==>ms
+}
+
+func (me *Timer) Change(after uint/* ms */) error {
 	if nil==me {
 		return ErrNilObj
 	}
 	
 	if me.IsPending() {
-		left := me.Left()
+		left := me.left()
+		after /= me.clock.unit // ms==>ticks
 		
 		me.remove()
 		
@@ -109,7 +114,7 @@ func (me *Timer) Change(after uint/* ticks */) error {
 }
 
 func (me *Timer) findRing() (uint, *tmRing) {
-	left := me.Left()
+	left := me.left()
 	
 	offset := uint(0)
 	idx := tm_RINGMAX
@@ -153,6 +158,22 @@ func (me *Timer) remove() {
 		me.ring 	= nil
 		me.flag 	&= ^tm_PENDING
 	}
+}
+
+func (me *Timer) Remove() error {
+	if nil==me {
+		return ErrNilObj
+	}
+	
+	if !me.IsPending() {
+		return ErrNoPending
+	}
+	
+	me.remove()
+	me.father 	= nil
+	me.clock	= nil
+	
+	return nil
 }
 
 type tmRing struct {
@@ -217,7 +238,7 @@ func (me *tmRing) trigger() uint {
 		
 		t.remove()
 		
-		if t.Left() > 0 {
+		if t.left() > 0 {
 			t.insert()
 			
 			continue
@@ -281,10 +302,6 @@ func (me *Clock) Ticks() uint64 {
 	return me.ticks
 }
 
-func (me *Clock) SetUnit(unit uint/* ms */) {
-	me.unit = unit
-}
-
 func (me *Clock) GetUnit() uint {
 	return me.unit
 }
@@ -318,7 +335,7 @@ func getTimer(entry interface{}, tag uint) *Timer {
 func (me *Clock) Insert(
 		entry interface{},
 		tag uint,
-		after uint, 
+		after uint /* ms */,
 		cb TimerCallback, 
 		Cycle bool) (*Timer, error) {
 	if nil==me {
@@ -338,6 +355,10 @@ func (me *Clock) Insert(
 		return nil, ErrBadIntf
 	}
 	
+	if t.IsPending() {
+		return nil, ErrPending
+	}
+	
 	flag := uint(0)
 	if Cycle {
 		flag = tm_CYCLE
@@ -346,7 +367,7 @@ func (me *Clock) Insert(
 	t.cb 		= cb
 	t.tag 		= tag
 	t.create	= me.ticks
-	t.expires	= after
+	t.expires	= after/me.unit // ms==>ticks
 	t.flag 		= flag
 	t.clock 	= me
 	t.father	= entry
@@ -354,27 +375,6 @@ func (me *Clock) Insert(
 	t.insert()
 	
 	return t, nil
-}
-
-func (me *Clock) Remove(entry interface{}) error {
-	if nil==me {
-		return ErrNilObj
-	}
-	
-	if nil==entry {
-		return ErrNilObj
-	}
-	
-	t, ok := entry.(*Timer)
-	if !ok {
-		return ErrBadType
-	}
-	
-	t.remove()
-	t.father = nil
-	t.clock	 = nil
-	
-	return nil
 }
 
 func (me *Clock) IsDebug() bool {
@@ -392,9 +392,10 @@ func (me *Clock) dump(action string) {
 	}
 }
 
-func TmClock(debug *bool) *Clock {
+func TmClock(unit uint/* ms */, debug *bool) *Clock {
 	c := &Clock{
 		debug:debug,
+		unit:unit,
 	}
 	
 	for i:=uint(0); i<tm_RING; i++ {

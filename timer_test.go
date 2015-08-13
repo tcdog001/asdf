@@ -18,7 +18,7 @@ func (me *Entry) GetTimer(tag uint) *Timer {
 	return &me.Timer
 }
 
-func (me *Entry) Name() string {
+func (me *Entry) Name(tag uint) string {
 	return Itoa(me.number)
 }
 
@@ -34,15 +34,16 @@ func EntryCallback(entry interface{}) (bool, error) {
 }
 
 const count = 100*1000
+const ms = 10
 var debug = false
-var clock = TmClock(&debug)
+var clock = TmClock(ms, &debug)
 var entry = [count]Entry{}
 
 func testInit() {	
 	for i:=0; i<count; i++ {
 		entry[i].number = i
 		
-		clock.Insert(&entry[i], 0, uint(i), EntryCallback, true)
+		clock.Insert(&entry[i], 0, ms*uint(i), EntryCallback, true)
 	}
 }
 
@@ -50,7 +51,7 @@ func TestTimer(t *testing.T) {
 	testInit()
 	
 	for i:=0;i<count;i++ {
-		time.Sleep(1)
+		time.Sleep(ms*1000*1000)
 		
 		clock.Trigger(1)
 		
