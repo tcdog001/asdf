@@ -34,7 +34,7 @@ func EntryCallback(entry interface{}) (bool, error) {
 }
 
 const count = 100*1000
-const ms = 10
+const ms = 1000
 var debug = false
 var clock = TmClock(ms, &debug)
 var entry = [count]Entry{}
