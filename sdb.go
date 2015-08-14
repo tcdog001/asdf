@@ -10,25 +10,29 @@ const (
 	
 	// input:key
 	// output:entry+error
-	SDB_ACT_GET 	= 0
+	SDB_ACT_GETONLY	= 0
+	
+	// input:key
+	// output:entry+error
+	SDB_ACT_GET 	= 1
 	
 	// input:key+entry
 	// output:error
-	SDB_ACT_PUT 	= 1
+	SDB_ACT_PUT 	= 2
 	
 	// input:key+entry
 	// output:error
-	SDB_ACT_CREATE 	= 2
+	SDB_ACT_CREATE 	= 3
 	
 	// input:key
 	// output:error
-	SDB_ACT_DELETE 	= 3
+	SDB_ACT_DELETE 	= 4
 	
 	// input:key+entry
 	// output:error
-	SDB_ACT_UPDATE 	= 4
+	SDB_ACT_UPDATE 	= 5
 	
-	SDB_ACT_END 	= 5
+	SDB_ACT_END 	= 6
 )
 
 const (
@@ -135,8 +139,9 @@ func (me *SDB) handle (q *SdbRequest) {
 	p := SdbResponse{}
 	
 	switch q.Act {
-		case SDB_ACT_GET:	me.get(q, &p)
-		case SDB_ACT_PUT:	me.put(q, &p)
+		case SDB_ACT_GETONLY:	me.getOnly(q, &p)
+		case SDB_ACT_GET:		me.get(q, &p)
+		case SDB_ACT_PUT:		me.put(q, &p)
 		case SDB_ACT_CREATE:	me.create(q, &p)
 		case SDB_ACT_DELETE:	me.delete(q, &p)
 		case SDB_ACT_UPDATE:	me.update(q, &p)
@@ -145,11 +150,11 @@ func (me *SDB) handle (q *SdbRequest) {
 	q.Chan<-p
 }
 
-func (me *SDB) get (q *SdbRequest, p *SdbResponse) {
+func (me *SDB) getEx (q *SdbRequest, p *SdbResponse, only bool) {
 	sdb, ok := me.db[q.Key]
 	if !ok {
 		p.Error = ErrNoExist
-	} else if sdb.ref > 0 {
+	} else if only && sdb.ref > 0 {
 		p.Error = ErrHolding
 	} else {
 		sdb.ref = 1
@@ -161,6 +166,14 @@ func (me *SDB) get (q *SdbRequest, p *SdbResponse) {
 		me.clock.Insert(sdb, SDB_TIMER_HOLD, me.Hold, holdTimeout, true)
 		sdb.idler().Change(me.Idle)
 	}
+}
+
+func (me *SDB) getOnly (q *SdbRequest, p *SdbResponse) {
+	me.getEx(q, p, true)
+}
+
+func (me *SDB) get (q *SdbRequest, p *SdbResponse) {
+	me.getEx(q, p, false)
 }
 
 func (me *SDB) put (q *SdbRequest, p *SdbResponse) {
@@ -176,7 +189,7 @@ func (me *SDB) put (q *SdbRequest, p *SdbResponse) {
 		sdb.holder().Remove()
 		sdb.idler().Change(me.Idle)
 	} else {
-		// do nothing
+		// just log
 	}
 }
 
@@ -202,6 +215,8 @@ func (me *SDB) create (q *SdbRequest, p *SdbResponse) {
 func (me *SDB) delete (q *SdbRequest, p *SdbResponse) {
 	if sdb, ok := me.db[q.Key]; !ok {
 		p.Error = ErrNoExist
+	} else if sdb.ref > 0 {
+		p.Error = ErrHolding
 	} else {
 		sdb.delete()		
 		
@@ -212,6 +227,8 @@ func (me *SDB) delete (q *SdbRequest, p *SdbResponse) {
 func (me *SDB) update (q *SdbRequest, p *SdbResponse) {
 	if sdb, ok := me.db[q.Key]; !ok {
 		p.Error = ErrNoExist
+	} else if sdb.ref > 0 {
+		p.Error = ErrHolding
 	} else {
 		// when update
 		// change idle timer
