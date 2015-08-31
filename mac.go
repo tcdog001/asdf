@@ -64,7 +64,7 @@ func (me Mac) ToStringMW() string {
 }
 
 func (me Mac) ToStringS() string {
-	return fmt.Sprintf("%x%x%x%x%x%x",
+	return fmt.Sprintf("%.2x%.2x%.2x%.2x%.2x%.2x",
 		me[0], me[1],
 		me[2], me[3],
 		me[4], me[5])

@@ -6,6 +6,8 @@ import (
 
 var Error 		= errors.New(Empty)
 
+var ErrEmpty    = errors.New("empty")
+var ErrFull     = errors.New("full")
 var ErrExist 	= errors.New("exist")
 var ErrHolding	= errors.New("holding")
 var ErrPending  = errors.New("pending")
