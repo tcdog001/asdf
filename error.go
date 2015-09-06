@@ -26,6 +26,7 @@ var ErrBadIdx 	= errors.New("bad idx")
 var ErrBadIntf	= errors.New("bad interface")
 var ErrBadType	= errors.New("bad type")
 var ErrNilBuffer= errors.New("nil buffer")
+var ErrNilIntf  = errors.New("nil interface")
 
 var ErrTooShortBuffer = errors.New("too short buffer")
 var ErrBadPktLen= errors.New("invalid packet length")

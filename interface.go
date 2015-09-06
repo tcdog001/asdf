@@ -91,6 +91,7 @@ type IGood interface {
 // combination interface
 ////////////////////////////////////////////////////////////////////////////////
 type IBound interface {
+	// [begin, end)
 	IBegin
 	IEnd
 }
