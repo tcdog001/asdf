@@ -7,14 +7,16 @@ import (
 
 type DbCacheAct uint
 
-const (	
+const (
+	// just get, NOT change it
 	// input:key
 	// output:entry+error
-	DB_CACHE_GETONLY	DbCacheAct = 0
+	DB_CACHE_GET	DbCacheAct = 0
 	
+	// hold it, need change it
 	// input:key
 	// output:entry+error
-	DB_CACHE_GET 		DbCacheAct = 1
+	DB_CACHE_HOLD 		DbCacheAct = 1
 	
 	// input:key+entry
 	// output:error
@@ -33,9 +35,13 @@ const (
 	DB_CACHE_UPDATE 	DbCacheAct = 5
 )
 
-const (	
+const (
+	DB_CACHE_TIMER_BEGIN 	= 0
+	
 	DB_CACHE_TIMER_IDLE		= 0
 	DB_CACHE_TIMER_HOLD 	= 1
+	
+	DB_CACHE_TIMER_END 		= 2
 )
 
 type DbCacheOps struct {
@@ -71,7 +77,7 @@ type dbcache struct {
 	DbCachePire
 	
 	ref 	uint
-	timer 	[SDB_TIMER_END]Timer
+	timer 	[DB_CACHE_TIMER_END]Timer
 	
 	SDB 	*DbCache
 }
@@ -100,16 +106,16 @@ func (me *dbcache) idler() *Timer {
 }
 
 func (me *dbcache) delete() {
-	me.SDB.db[me.Key] = nil
-	me.SDB 		= nil
-	me.Key 		= nil
-	me.Entry 	= nil
-
 	// when delete
 	// remove idle timer
 	// remove hold timer
 	me.idler().Remove()
 	me.holder().Remove()
+	
+	me.SDB.db[me.Key] = nil
+	me.SDB 		= nil
+	me.Key 		= nil
+	me.Entry 	= nil
 }
 
 type DbCache struct {
@@ -125,41 +131,42 @@ func (me *DbCache) handle (q *DbCacheRequest) {
 	p := DbCacheResponse{}
 	
 	switch q.Act {
-		case DB_CACHE_GETONLY:	me.getOnly(q, &p)
 		case DB_CACHE_GET:		me.get(q, &p)
+		case DB_CACHE_HOLD:		me.hold(q, &p)
 		case DB_CACHE_PUT:		me.put(q, &p)
 		case DB_CACHE_CREATE:	me.create(q, &p)
 		case DB_CACHE_DELETE:	me.delete(q, &p)
 		case DB_CACHE_UPDATE:	me.update(q, &p)
+		default: p.Error = ErrNoSupport
 	}
 	
 	q.Chan<-p
 }
 
-func (me *DbCache) getEx (q *DbCacheRequest, p *DbCacheResponse, only bool) {
+func (me *DbCache) get (q *DbCacheRequest, p *DbCacheResponse) {
 	sdb, ok := me.db[q.Key]
 	if !ok {
 		p.Error = ErrNoExist
-	} else if only && sdb.ref > 0 {
-		p.Error = ErrHolding
 	} else {
-		sdb.ref = 1
 		p.Entry = sdb.Entry
-
-		// when get
-		// insert hold timer
-		// change idle timer
-		me.clock.Insert(sdb, DB_CACHE_TIMER_HOLD, me.Hold, holdTimeout, true)
+		
 		sdb.idler().Change(me.Idle)
 	}
 }
 
-func (me *DbCache) getOnly (q *DbCacheRequest, p *DbCacheResponse) {
-	me.getEx(q, p, true)
-}
-
-func (me *DbCache) get (q *DbCacheRequest, p *DbCacheResponse) {
-	me.getEx(q, p, false)
+func (me *DbCache) hold (q *DbCacheRequest, p *DbCacheResponse) {
+	sdb, ok := me.db[q.Key]
+	if !ok {
+		p.Error = ErrNoExist
+	} else if sdb.ref > 0 { // is holding
+		p.Error = ErrHolding
+	} else { // not holding
+		sdb.ref = 1
+		p.Entry = sdb.Entry
+		
+		me.clock.Insert(sdb, DB_CACHE_TIMER_HOLD, me.Hold, holdTimeout, true)
+		sdb.idler().Change(me.Idle)
+	}
 }
 
 func (me *DbCache) put (q *DbCacheRequest, p *DbCacheResponse) {
@@ -184,7 +191,7 @@ func (me *DbCache) create (q *DbCacheRequest, p *DbCacheResponse) {
 		p.Error = ErrExist
 	} else if p.Error = me.Create(q.Entry); nil==p.Error {
 		sdb := &dbcache{
-			SdbPire:DbCachePire{
+			DbCachePire:DbCachePire{
 				Key:q.Key,
 				Entry:q.Entry,
 			},
