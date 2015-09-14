@@ -8,12 +8,12 @@ import (
 type DbCacheAct uint
 
 const (
-	// just get, NOT change it
+	// get, NOT change it
 	// input:key
 	// output:entry+error
 	DB_CACHE_GET	DbCacheAct = 0
 	
-	// hold it, need change it
+	// hold, need change it
 	// input:key
 	// output:entry+error
 	DB_CACHE_HOLD 		DbCacheAct = 1
@@ -150,6 +150,8 @@ func (me *DbCache) get (q *DbCacheRequest, p *DbCacheResponse) {
 	} else {
 		p.Entry = sdb.Entry
 		
+		// when get
+		// update idle timer
 		sdb.idler().Change(me.Idle)
 	}
 }
@@ -164,6 +166,9 @@ func (me *DbCache) hold (q *DbCacheRequest, p *DbCacheResponse) {
 		sdb.ref = 1
 		p.Entry = sdb.Entry
 		
+		// when hold
+		// insert hold timer
+		// update idle timer
 		me.clock.Insert(sdb, DB_CACHE_TIMER_HOLD, me.Hold, holdTimeout, true)
 		sdb.idler().Change(me.Idle)
 	}
