@@ -44,11 +44,6 @@ const (
 	SDB_TIMER_END 	= 2
 )
 
-type SdbPire struct {
-	Key 	interface{}
-	Entry	interface{}
-}
-
 type SdbOps struct {
 	Max 	uint
 	Idle 	uint /* ms */
@@ -58,6 +53,11 @@ type SdbOps struct {
 	Create func (entry interface{}) error
 	Delete func (Key interface{}) error
 	Update func (entry interface{}) error
+}
+
+type SdbPire struct {
+	Key 	interface{}
+	Entry	interface{}
 }
 
 type SdbResponse struct {
@@ -133,6 +133,8 @@ func (me *SDB) Init (ops SdbOps) {
 	me.db = make(map[interface{}]*sdb, me.Max)
 	
 	me.clock = TmClock(me.Unit, &me.debug)
+	
+	Log.Info("sdb init")
 }
 
 func (me *SDB) handle (q *SdbRequest) {
@@ -244,6 +246,8 @@ func idleTimeout(entry interface{}) (bool, error) {
 		return true, ErrBadType
 	}
 	
+	Log.Info("sdb %v idle timeout", entry)
+	
 	sdb.delete()
 	
 	return false, nil
@@ -258,11 +262,15 @@ func holdTimeout(entry interface{}) (bool, error) {
 	sdb.holder().Remove()
 	sdb.ref = 0
 	
+	Log.Info("sdb %v hold timeout", entry)
+	
 	return false, nil
 }
 
 // go it
 func SdbRun(sdb *SDB) {
+	Log.Info("sdb run")
+	
 	for {
 		select {
 			case q := <- sdb.ch:
