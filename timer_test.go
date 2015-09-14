@@ -13,11 +13,11 @@ type Entry struct {
 	number int
 }
 
-func (me *Entry) GetTimer(tag uint) *Timer {
+func (me *Entry) GetTimer(tidx uint) *Timer {
 	return &me.Timer
 }
 
-func (me *Entry) Name(tag uint) string {
+func (me *Entry) Name(tidx uint) string {
 	return Itoa(me.number)
 }
 

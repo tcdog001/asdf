@@ -82,10 +82,10 @@ type sdb struct {
 	SDB 	*SDB
 }
 
-func (me *sdb) Name(tag uint) string {
+func (me *sdb) Name(tidx uint) string {
 	var name string
 	
-	switch tag {
+	switch tidx {
 		case SDB_TIMER_IDLE: name = "idler"
 		case SDB_TIMER_HOLD: name = "holder"
 	}
@@ -93,8 +93,8 @@ func (me *sdb) Name(tag uint) string {
 	return name
 }
 
-func (me *sdb) GetTimer(tag uint) *Timer {
-	return &me.timer[tag]
+func (me *sdb) GetTimer(tidx uint) *Timer {
+	return &me.timer[tidx]
 }
 
 func (me *sdb) holder() *Timer {
@@ -271,11 +271,13 @@ func holdTimeout(entry interface{}) (bool, error) {
 func SdbRun(sdb *SDB) {
 	Log.Info("sdb run")
 	
+	timeout := time.After(time.Duration(sdb.Unit) * time.Millisecond)
+	
 	for {
 		select {
 			case q := <- sdb.ch:
 				sdb.handle(&q)
-			case <- time.After(time.Duration(sdb.Unit)*1000*1000):
+			case <- timeout:
 				sdb.clock.Trigger(1)
 		}
 	}
