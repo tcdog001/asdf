@@ -28,6 +28,7 @@ var ErrBadType	= errors.New("bad type")
 var ErrNilBuffer= errors.New("nil buffer")
 var ErrNilIntf  = errors.New("nil interface")
 
+var ErrTooMore 	= errors.New("too more")
 var ErrTooShortBuffer = errors.New("too short buffer")
 var ErrBadPktLen= errors.New("invalid packet length")
 var ErrPktLenNoMatchBufferLen = errors.New("packet length not match buffer length")
