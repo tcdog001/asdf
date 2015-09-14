@@ -112,7 +112,7 @@ func (me *dbcache) delete() {
 	me.idler().Remove()
 	me.holder().Remove()
 	
-	me.SDB.db[me.Key] = nil
+	me.SDB.cache[me.Key] = nil
 	me.SDB 		= nil
 	me.Key 		= nil
 	me.Entry 	= nil
@@ -120,10 +120,11 @@ func (me *dbcache) delete() {
 
 type DbCache struct {
 	DbCacheOps
-	Ch 		chan DbCacheRequest
 	
-	debug 	bool
-	db 		map[interface{}]*dbcache
+	Ch 		chan DbCacheRequest
+	Debug 	bool
+	
+	cache 	map[interface{}]*dbcache
 	clock 	*Clock
 }
 
@@ -144,7 +145,7 @@ func (me *DbCache) handle (q *DbCacheRequest) {
 }
 
 func (me *DbCache) get (q *DbCacheRequest, p *DbCacheResponse) {
-	sdb, ok := me.db[q.Key]
+	sdb, ok := me.cache[q.Key]
 	if !ok {
 		p.Error = ErrNoExist
 	} else {
@@ -157,7 +158,7 @@ func (me *DbCache) get (q *DbCacheRequest, p *DbCacheResponse) {
 }
 
 func (me *DbCache) hold (q *DbCacheRequest, p *DbCacheResponse) {
-	sdb, ok := me.db[q.Key]
+	sdb, ok := me.cache[q.Key]
 	if !ok {
 		p.Error = ErrNoExist
 	} else if sdb.ref > 0 { // is holding
@@ -175,7 +176,7 @@ func (me *DbCache) hold (q *DbCacheRequest, p *DbCacheResponse) {
 }
 
 func (me *DbCache) put (q *DbCacheRequest, p *DbCacheResponse) {
-	sdb, ok := me.db[q.Key]
+	sdb, ok := me.cache[q.Key]
 	if !ok {
 		p.Error = ErrNoExist
 	} else if sdb.ref > 0 {
@@ -192,7 +193,7 @@ func (me *DbCache) put (q *DbCacheRequest, p *DbCacheResponse) {
 }
 
 func (me *DbCache) create (q *DbCacheRequest, p *DbCacheResponse) {
-	if _, ok := me.db[q.Key]; ok {
+	if _, ok := me.cache[q.Key]; ok {
 		p.Error = ErrExist
 	} else if p.Error = me.Create(q.Entry); nil==p.Error {
 		sdb := &dbcache{
@@ -206,12 +207,12 @@ func (me *DbCache) create (q *DbCacheRequest, p *DbCacheResponse) {
 		// when create
 		// insert idle timer
 		me.clock.Insert(sdb, DB_CACHE_TIMER_IDLE, me.Idle, idleTimeout, true)
-		me.db[q.Key] = sdb
+		me.cache[q.Key] = sdb
 	}
 }
 
 func (me *DbCache) delete (q *DbCacheRequest, p *DbCacheResponse) {
-	if sdb, ok := me.db[q.Key]; !ok {
+	if sdb, ok := me.cache[q.Key]; !ok {
 		p.Error = ErrNoExist
 	} else if sdb.ref > 0 {
 		p.Error = ErrHolding
@@ -223,7 +224,7 @@ func (me *DbCache) delete (q *DbCacheRequest, p *DbCacheResponse) {
 }
 
 func (me *DbCache) update (q *DbCacheRequest, p *DbCacheResponse) {
-	if sdb, ok := me.db[q.Key]; !ok {
+	if sdb, ok := me.cache[q.Key]; !ok {
 		p.Error = ErrNoExist
 	} else if sdb.ref > 0 {
 		p.Error = ErrHolding
@@ -265,9 +266,9 @@ func holdTimeout(entry interface{}) (bool, error) {
 
 func (me *DbCache) init () {
 	me.Ch = make(chan DbCacheRequest, me.Max/100)
-	me.db = make(map[interface{}]*dbcache, me.Max)
+	me.cache = make(map[interface{}]*dbcache, me.Max)
 	
-	me.clock = TmClock(me.Unit, &me.debug)
+	me.clock = TmClock(me.Unit, &me.Debug)
 	
 	Log.Info("sdb init")
 }
