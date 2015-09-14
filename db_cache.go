@@ -5,46 +5,40 @@ import (
 //	"fmt"
 )
 
-const (
-	SDB_ACT_BEGIN 	= 0
+type DbCacheAct uint
+
+const (	
+	// input:key
+	// output:entry+error
+	DB_CACHE_GETONLY	DbCacheAct = 0
 	
 	// input:key
 	// output:entry+error
-	SDB_ACT_GETONLY	= 0
-	
-	// input:key
-	// output:entry+error
-	SDB_ACT_GET 	= 1
+	DB_CACHE_GET 		DbCacheAct = 1
 	
 	// input:key+entry
 	// output:error
-	SDB_ACT_PUT 	= 2
+	DB_CACHE_PUT 		DbCacheAct = 2
 	
 	// input:key+entry
 	// output:error
-	SDB_ACT_CREATE 	= 3
+	DB_CACHE_CREATE 	DbCacheAct = 3
 	
 	// input:key
 	// output:error
-	SDB_ACT_DELETE 	= 4
+	DB_CACHE_DELETE 	DbCacheAct = 4
 	
 	// input:key+entry
 	// output:error
-	SDB_ACT_UPDATE 	= 5
-	
-	SDB_ACT_END 	= 6
+	DB_CACHE_UPDATE 	DbCacheAct = 5
 )
 
-const (
-	SDB_TIMER_BEGIN	= 0
-	
-	SDB_TIMER_IDLE 	= 0
-	SDB_TIMER_HOLD 	= 1
-	
-	SDB_TIMER_END 	= 2
+const (	
+	DB_CACHE_TIMER_IDLE		= 0
+	DB_CACHE_TIMER_HOLD 	= 1
 )
 
-type SdbOps struct {
+type DbCacheOps struct {
 	Max 	uint
 	Idle 	uint /* ms */
 	Hold 	uint /* ms */
@@ -55,57 +49,57 @@ type SdbOps struct {
 	Update func (entry interface{}) error
 }
 
-type SdbPire struct {
+type DbCachePire struct {
 	Key 	interface{}
 	Entry	interface{}
 }
 
-type SdbResponse struct {
-	SdbPire
+type DbCacheResponse struct {
+	DbCachePire
 	
 	Error 	error
 }
 
-type SdbRequest struct {
-	SdbPire
+type DbCacheRequest struct {
+	DbCachePire
 	
-	Act 	int
-	Chan 	chan SdbResponse
+	Act 	DbCacheAct
+	Chan 	chan DbCacheResponse
 }
 
-type sdb struct {
-	SdbPire
+type dbcache struct {
+	DbCachePire
 	
 	ref 	uint
 	timer 	[SDB_TIMER_END]Timer
 	
-	SDB 	*SDB
+	SDB 	*DbCache
 }
 
-func (me *sdb) Name(tidx uint) string {
+func (me *dbcache) Name(tidx uint) string {
 	var name string
 	
 	switch tidx {
-		case SDB_TIMER_IDLE: name = "idler"
-		case SDB_TIMER_HOLD: name = "holder"
+		case DB_CACHE_TIMER_IDLE: name = "idler"
+		case DB_CACHE_TIMER_HOLD: name = "holder"
 	}
 	
 	return name
 }
 
-func (me *sdb) GetTimer(tidx uint) *Timer {
+func (me *dbcache) GetTimer(tidx uint) *Timer {
 	return &me.timer[tidx]
 }
 
-func (me *sdb) holder() *Timer {
-	return &me.timer[SDB_TIMER_HOLD]
+func (me *dbcache) holder() *Timer {
+	return &me.timer[DB_CACHE_TIMER_HOLD]
 }
 
-func (me *sdb) idler() *Timer {
-	return &me.timer[SDB_TIMER_IDLE]
+func (me *dbcache) idler() *Timer {
+	return &me.timer[DB_CACHE_TIMER_IDLE]
 }
 
-func (me *sdb) delete() {
+func (me *dbcache) delete() {
 	me.SDB.db[me.Key] = nil
 	me.SDB 		= nil
 	me.Key 		= nil
@@ -118,41 +112,31 @@ func (me *sdb) delete() {
 	me.holder().Remove()
 }
 
-type SDB struct {
-	SdbOps
+type DbCache struct {
+	DbCacheOps
+	Ch 		chan DbCacheRequest
 	
 	debug 	bool
-	db 		map[interface{}]*sdb
-	ch 		chan SdbRequest
+	db 		map[interface{}]*dbcache
 	clock 	*Clock
 }
 
-func (me *SDB) Init (ops SdbOps) {
-	me.SdbOps = ops
-	me.ch = make(chan SdbRequest, me.Max/100)
-	me.db = make(map[interface{}]*sdb, me.Max)
-	
-	me.clock = TmClock(me.Unit, &me.debug)
-	
-	Log.Info("sdb init")
-}
-
-func (me *SDB) handle (q *SdbRequest) {
-	p := SdbResponse{}
+func (me *DbCache) handle (q *DbCacheRequest) {
+	p := DbCacheResponse{}
 	
 	switch q.Act {
-		case SDB_ACT_GETONLY:	me.getOnly(q, &p)
-		case SDB_ACT_GET:		me.get(q, &p)
-		case SDB_ACT_PUT:		me.put(q, &p)
-		case SDB_ACT_CREATE:	me.create(q, &p)
-		case SDB_ACT_DELETE:	me.delete(q, &p)
-		case SDB_ACT_UPDATE:	me.update(q, &p)
+		case DB_CACHE_GETONLY:	me.getOnly(q, &p)
+		case DB_CACHE_GET:		me.get(q, &p)
+		case DB_CACHE_PUT:		me.put(q, &p)
+		case DB_CACHE_CREATE:	me.create(q, &p)
+		case DB_CACHE_DELETE:	me.delete(q, &p)
+		case DB_CACHE_UPDATE:	me.update(q, &p)
 	}
 	
 	q.Chan<-p
 }
 
-func (me *SDB) getEx (q *SdbRequest, p *SdbResponse, only bool) {
+func (me *DbCache) getEx (q *DbCacheRequest, p *DbCacheResponse, only bool) {
 	sdb, ok := me.db[q.Key]
 	if !ok {
 		p.Error = ErrNoExist
@@ -165,20 +149,20 @@ func (me *SDB) getEx (q *SdbRequest, p *SdbResponse, only bool) {
 		// when get
 		// insert hold timer
 		// change idle timer
-		me.clock.Insert(sdb, SDB_TIMER_HOLD, me.Hold, holdTimeout, true)
+		me.clock.Insert(sdb, DB_CACHE_TIMER_HOLD, me.Hold, holdTimeout, true)
 		sdb.idler().Change(me.Idle)
 	}
 }
 
-func (me *SDB) getOnly (q *SdbRequest, p *SdbResponse) {
+func (me *DbCache) getOnly (q *DbCacheRequest, p *DbCacheResponse) {
 	me.getEx(q, p, true)
 }
 
-func (me *SDB) get (q *SdbRequest, p *SdbResponse) {
+func (me *DbCache) get (q *DbCacheRequest, p *DbCacheResponse) {
 	me.getEx(q, p, false)
 }
 
-func (me *SDB) put (q *SdbRequest, p *SdbResponse) {
+func (me *DbCache) put (q *DbCacheRequest, p *DbCacheResponse) {
 	sdb, ok := me.db[q.Key]
 	if !ok {
 		p.Error = ErrNoExist
@@ -195,12 +179,12 @@ func (me *SDB) put (q *SdbRequest, p *SdbResponse) {
 	}
 }
 
-func (me *SDB) create (q *SdbRequest, p *SdbResponse) {
+func (me *DbCache) create (q *DbCacheRequest, p *DbCacheResponse) {
 	if _, ok := me.db[q.Key]; ok {
 		p.Error = ErrExist
 	} else if p.Error = me.Create(q.Entry); nil==p.Error {
-		sdb := &sdb{
-			SdbPire:SdbPire{
+		sdb := &dbcache{
+			SdbPire:DbCachePire{
 				Key:q.Key,
 				Entry:q.Entry,
 			},
@@ -209,12 +193,12 @@ func (me *SDB) create (q *SdbRequest, p *SdbResponse) {
 		
 		// when create
 		// insert idle timer
-		me.clock.Insert(sdb, SDB_TIMER_IDLE, me.Idle, idleTimeout, true)
+		me.clock.Insert(sdb, DB_CACHE_TIMER_IDLE, me.Idle, idleTimeout, true)
 		me.db[q.Key] = sdb
 	}
 }
 
-func (me *SDB) delete (q *SdbRequest, p *SdbResponse) {
+func (me *DbCache) delete (q *DbCacheRequest, p *DbCacheResponse) {
 	if sdb, ok := me.db[q.Key]; !ok {
 		p.Error = ErrNoExist
 	} else if sdb.ref > 0 {
@@ -226,7 +210,7 @@ func (me *SDB) delete (q *SdbRequest, p *SdbResponse) {
 	}
 }
 
-func (me *SDB) update (q *SdbRequest, p *SdbResponse) {
+func (me *DbCache) update (q *DbCacheRequest, p *DbCacheResponse) {
 	if sdb, ok := me.db[q.Key]; !ok {
 		p.Error = ErrNoExist
 	} else if sdb.ref > 0 {
@@ -241,7 +225,7 @@ func (me *SDB) update (q *SdbRequest, p *SdbResponse) {
 }
 
 func idleTimeout(entry interface{}) (bool, error) {
-	sdb, ok := entry.(*sdb)
+	sdb, ok := entry.(*dbcache)
 	if !ok {
 		return true, ErrBadType
 	}
@@ -254,7 +238,7 @@ func idleTimeout(entry interface{}) (bool, error) {
 }
 
 func holdTimeout(entry interface{}) (bool, error) {
-	sdb, ok := entry.(*sdb)
+	sdb, ok := entry.(*dbcache)
 	if !ok {
 		return true, ErrBadType
 	}
@@ -267,15 +251,26 @@ func holdTimeout(entry interface{}) (bool, error) {
 	return false, nil
 }
 
+func (me *DbCache) init () {
+	me.Ch = make(chan DbCacheRequest, me.Max/100)
+	me.db = make(map[interface{}]*dbcache, me.Max)
+	
+	me.clock = TmClock(me.Unit, &me.debug)
+	
+	Log.Info("sdb init")
+}
+
 // go it
-func SdbRun(sdb *SDB) {
+func SdbRun(sdb *DbCache) {
+	sdb.init()
+	
 	Log.Info("sdb run")
 	
 	timeout := time.After(time.Duration(sdb.Unit) * time.Millisecond)
 	
 	for {
 		select {
-			case q := <- sdb.ch:
+			case q := <- sdb.Ch:
 				sdb.handle(&q)
 			case <- timeout:
 				sdb.clock.Trigger(1)
