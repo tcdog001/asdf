@@ -16,6 +16,7 @@ const (
 	MacSepUnix    = ':'
 )
 
+type MAC [MacSize]byte
 type Mac []byte
 
 func (me Mac) IsGood() bool {
