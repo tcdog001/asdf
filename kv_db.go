@@ -385,32 +385,46 @@ type KvDbOps struct {
 }
 
 const (
-	kv_DEFT_MAX 	= 1000*1000
-	kv_DEFT_CAP 	= 1000
-	kv_DEFT_IDLE 	= 300*1000
-	kv_DEFT_HOLD 	= 30*1000
-	kv_DEFT_UNIT 	= 1*1000
+	kv_deft_MAX 	= 1000*1000
+	kv_min_MAX 		= 10*1000
+	kv_max_MAX 		= 10*1000*1000
+	
+	kv_deft_CAP 	= 1000
+	kv_min_CAP 		= 10
+	kv_max_CAP 		= 10*1000
+	
+	kv_deft_IDLE 	= 300*1000
+	kv_min_IDLE 	= 3*1000
+	kv_max_IDLE		= 3600*1000
+	
+	kv_deft_HOLD 	= 30*1000
+	kv_min_HOLD 	= 3*1000
+	kv_max_HOLD 	= 300*1000
+	
+	kv_deft_UNIT 	= 1*1000
+	kv_min_UNIT 	= 10
+	kv_max_UNIT 	= 10*1000
 )
 
 func DbCache (ops KvDbOps) IKvDB {
-	if 0==ops.Max {
-		ops.Max = kv_DEFT_MAX
+	if ops.Max < kv_min_MAX || ops.Max > kv_max_MAX {
+		ops.Max = kv_deft_MAX
 	}
 	
-	if 0==ops.Cap {
-		ops.Cap = kv_DEFT_CAP
+	if ops.Cap < kv_min_CAP || ops.Cap > kv_max_CAP {
+		ops.Cap = kv_deft_CAP
 	}
 	
-	if 0==ops.Idle {
-		ops.Idle = kv_DEFT_IDLE
+	if ops.Idle < kv_min_IDLE || ops.Idle > kv_max_IDLE {
+		ops.Idle = kv_deft_IDLE
 	}
 	
-	if 0==ops.Hold {
-		ops.Hold = kv_DEFT_HOLD
+	if ops.Hold < kv_min_HOLD || ops.Hold > kv_max_HOLD {
+		ops.Hold = kv_deft_HOLD
 	}
 	
-	if 0==ops.Unit {
-		ops.Unit = kv_DEFT_UNIT
+	if ops.Unit < kv_min_UNIT || ops.Unit > kv_max_UNIT {
+		ops.Unit = kv_deft_UNIT
 	}
 	
 	db := &kvDB{
