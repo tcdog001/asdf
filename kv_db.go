@@ -42,17 +42,6 @@ const (
 	kv_TIMER_END	= 2
 )
 
-type KvDbOps struct {
-	Max 	uint
-	Idle 	uint /* ms */
-	Hold 	uint /* ms */
-	Unit 	uint /* ms */
-	
-	Create func (entry interface{}) error
-	Delete func (key interface{}) error
-	Update func (entry interface{}) error
-}
-
 type KvResponse struct {
 	Key 	interface{}
 	Entry	interface{}
@@ -383,17 +372,57 @@ func (me *kvDB) Run() {
 	}
 }
 
+type KvDbOps struct {
+	Max 	uint
+	Cap 	uint /* request channel cap */
+	Idle 	uint /* ms */
+	Hold 	uint /* ms */
+	Unit 	uint /* ms */
+	
+	Create func (entry interface{}) error
+	Delete func (key interface{}) error
+	Update func (entry interface{}) error
+}
+
+const (
+	kv_DEFT_MAX 	= 1000*1000
+	kv_DEFT_CAP 	= 1000
+	kv_DEFT_IDLE 	= 300*1000
+	kv_DEFT_HOLD 	= 30*1000
+	kv_DEFT_UNIT 	= 1*1000
+)
+
 func DbCache (ops KvDbOps) IKvDB {
-	kvc := &kvDB{
-		ops: 	ops,
+	if 0==ops.Max {
+		ops.Max = kv_DEFT_MAX
+	}
+	
+	if 0==ops.Cap {
+		ops.Cap = kv_DEFT_CAP
+	}
+	
+	if 0==ops.Idle {
+		ops.Idle = kv_DEFT_IDLE
+	}
+	
+	if 0==ops.Hold {
+		ops.Hold = kv_DEFT_HOLD
+	}
+	
+	if 0==ops.Unit {
+		ops.Unit = kv_DEFT_UNIT
+	}
+	
+	db := &kvDB{
+		ops: ops,
 	}
 
-	kvc.ch 		= make(chan kvRequest, ops.Max/100)
-	kvc.cache 	= make(map[interface{}]*kvCache, ops.Max)
-	kvc.clock 	= TmClock(ops.Unit)
+	db.ch 		= make(chan kvRequest, ops.Cap)
+	db.cache 	= make(map[interface{}]*kvCache, ops.Max)
+	db.clock 	= TmClock(ops.Unit)
 	
 	Log.Info("kvDB init")
 	
-	return kvc
+	return db
 }
 
