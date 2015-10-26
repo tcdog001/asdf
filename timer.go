@@ -19,9 +19,9 @@ const (
 type TimerCallback func(proxy ITimerProxy) (bool/* safe */, error)
 
 type ITimerProxy interface {
-	Get(tidx uint) ITimer
-	Bind(tidx uint, timer ITimer)
-	Name(tidx uint) string
+	GetTimer(tidx uint) ITimer
+	SetTimer(tidx uint, timer ITimer)
+	TimerName(tidx uint) string
 }
 
 type ITimer interface {
@@ -69,7 +69,7 @@ func (me *tmTimer) dump(action string) {
 	if me.isDebug() {
 		fmt.Printf("%s timer(%s) tidx(%d) ring(%d) slot(%d) expires(%d) create(%d)" + Crlf, 
 			action,
-			me.proxy.Name(me.tidx),
+			me.proxy.TimerName(me.tidx),
 			me.tidx,
 			me.ring.idx,
 			me.slot,
@@ -165,11 +165,11 @@ func (me *tmTimer) bind(tidx uint, proxy ITimerProxy) {
 	me.proxy 	= proxy
 	me.tidx		= tidx
 
-	proxy.Bind(tidx, me)
+	proxy.SetTimer(tidx, me)
 }
 
 func (me *tmTimer) unbind() {
-	me.proxy.Bind(me.tidx, nil)
+	me.proxy.SetTimer(me.tidx, nil)
 	
 	me.proxy 	= nil
 	me.tidx  	= 0
@@ -357,7 +357,7 @@ func (me *tmClock) Insert(
 		return nil, ErrNilObj
 	} else if nil==proxy {
 		return nil, ErrNilObj
-	} else if nil!=proxy.Get(tidx) {
+	} else if nil!=proxy.GetTimer(tidx) {
 		return nil, ErrExist
 	}
 	
