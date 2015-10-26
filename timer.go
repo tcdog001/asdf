@@ -345,18 +345,6 @@ func (me *tmClock) Trigger(times uint) uint {
 	return count
 }
 
-func getTimer(entry interface{}, tidx uint) ITimer {
-	var t ITimer
-	
-	if proxy, ok := entry.(ITimerProxy); !ok {
-		return nil
-	} else if t = proxy.Get(tidx); nil==t {
-		return nil
-	}
-	
-	return t
-}
-
 func (me *tmClock) Insert(
 		proxy ITimerProxy,
 		tidx uint, // timer index
@@ -365,17 +353,11 @@ func (me *tmClock) Insert(
 		cycle bool) (ITimer, error) {
 	if nil==me {
 		return nil, ErrNilObj
-	}
-	
-	if nil==proxy {
+	} else if nil==cb {
 		return nil, ErrNilObj
-	}
-	
-	if nil==cb {
+	} else if nil==proxy {
 		return nil, ErrNilObj
-	}
-		
-	if nil!=getTimer(proxy, tidx) {
+	} else if nil!=proxy.Get(tidx) {
 		return nil, ErrExist
 	}
 	
