@@ -16,14 +16,37 @@ const (
 	tm_CYCLE 	uint = 2
 )
 
-type TimerCallback func(entry interface{}) (bool/* safe */, error)
+type TimerCallback func(proxy ITimerProxy) (bool/* safe */, error)
 
-type ITimer interface {
-	GetTimer(tidx uint) *Timer
+type ITimerProxy interface {
+	Get(tidx uint) ITimer
+	Bind(tidx uint, timer ITimer)
 	Name(tidx uint) string
 }
 
-type Timer struct {
+type ITimer interface {
+	IsPending() bool
+	IsCycle() bool
+	
+	Left() uint
+	Change(after uint/* ms */) error
+	Remove() error
+}
+
+type IClock interface {
+	Insert(
+		proxy ITimerProxy,
+		tidx uint, // timer index
+		after uint, // ms
+		cb TimerCallback, 
+		cycle bool) (ITimer, error)
+	Trigger(times uint) uint
+	Ticks() uint64
+	Unit() uint
+	Debug(debug bool)
+}
+
+type tmTimer struct {
 	cb 		TimerCallback
 	
 	tidx 	uint
@@ -33,47 +56,47 @@ type Timer struct {
 	create	uint64	// ticks
 	
 	ring 	*tmRing
-	clock 	*Clock
+	clock 	*tmClock
 	node 	*list.Element
-	father 	interface{}
+	proxy	ITimerProxy
 }
 
-func (me *Timer) IsDebug() bool {
-	return me.clock.IsDebug()
+func (me *tmTimer) isDebug() bool {
+	return me.clock.debug
 }
 
-func (me *Timer) dump(action string) {
-	if me.IsDebug() {
-		if iTimer, ok := me.father.(ITimer); ok {
-			fmt.Printf("%s timer(%s) tidx(%d) ring(%d) slot(%d) expires(%d) create(%d)" + Crlf, 
-				action,
-				iTimer.Name(me.tidx),
-				me.tidx,
-				me.ring.idx,
-				me.slot,
-				me.expires,
-				me.create)
-		}
+func (me *tmTimer) dump(action string) {
+	if me.isDebug() {
+		fmt.Printf("%s timer(%s) tidx(%d) ring(%d) slot(%d) expires(%d) create(%d)" + Crlf, 
+			action,
+			me.proxy.Name(me.tidx),
+			me.tidx,
+			me.ring.idx,
+			me.slot,
+			me.expires,
+			me.create)
 	}
 }
 
-func (me *Timer) IsPending() bool {
+func (me *tmTimer) IsPending() bool {
 	return tm_PENDING==(tm_PENDING & me.flag)
 }
 
-func (me *Timer) IsCycle() bool {
+func (me *tmTimer) IsCycle() bool {
 	return tm_CYCLE==(tm_CYCLE & me.flag)
 }
 
-func (me *Timer) UnCycle() {
+/*
+func (me *tmTimer) undoCycle() {
 	me.flag &= ^tm_CYCLE
 }
 
-func (me *Timer) Cycle() {
+func (me *tmTimer) cycle() {
 	me.flag |= tm_CYCLE
 }
+*/
 
-func (me *Timer) left() uint /* ticks */ {
+func (me *tmTimer) left() uint /* ticks */ {
 	timeout := me.create + uint64(me.expires)
 	
 	ticks := me.clock.ticks
@@ -84,11 +107,11 @@ func (me *Timer) left() uint /* ticks */ {
 	return 0
 }
 
-func (me *Timer) Left() uint /* ms */ {
+func (me *tmTimer) Left() uint /* ms */ {
 	return me.left() * me.clock.unit // ticks==>ms
 }
 
-func (me *Timer) Change(after uint/* ms */) error {
+func (me *tmTimer) Change(after uint/* ms */) error {
 	if nil==me {
 		return ErrNilObj
 	}
@@ -113,7 +136,7 @@ func (me *Timer) Change(after uint/* ms */) error {
 	return ErrNoExist
 }
 
-func (me *Timer) findRing() (uint, *tmRing) {
+func (me *tmTimer) findRing() (uint, *tmRing) {
 	left := me.left()
 	
 	offset := uint(0)
@@ -138,29 +161,43 @@ func (me *Timer) findRing() (uint, *tmRing) {
 	return (r.current + offset) & tm_MASK, r
 }
 
-func (me *Timer) insert() {
+func (me *tmTimer) bind(tidx uint, proxy ITimerProxy) {
+	me.proxy 	= proxy
+	me.tidx		= tidx
+
+	proxy.Bind(tidx, me)
+}
+
+func (me *tmTimer) unbind() {
+	me.proxy.Bind(me.tidx, nil)
+	
+	me.proxy 	= nil
+	me.tidx  	= 0
+}
+
+func (me *tmTimer) insert() {
 	if nil==me.node {
 		slot, r := me.findRing()
 		
-		me.node = r.List(slot).PushBack(me)
+		me.node = r.list(slot).PushBack(me)
 		me.slot = slot
 		me.ring = r
 		me.flag |= tm_PENDING
-		
+				
 		me.dump("insert")
 	}
 }
 
-func (me *Timer) remove() {
+func (me *tmTimer) remove() {
 	if nil!=me.node {
-		me.ring.List(me.slot).Remove(me.node)
-		me.node 	= nil
-		me.ring 	= nil
-		me.flag 	&= ^tm_PENDING
+		me.ring.list(me.slot).Remove(me.node)
+		me.node	= nil
+		me.ring	= nil
+		me.flag &= ^tm_PENDING
 	}
 }
 
-func (me *Timer) Remove() error {
+func (me *tmTimer) Remove() error {
 	if nil==me {
 		return ErrNilObj
 	}
@@ -170,43 +207,42 @@ func (me *Timer) Remove() error {
 	}
 	
 	me.remove()
-	me.father 	= nil
-	me.clock	= nil
+	me.unbind()
 	
 	return nil
 }
 
 type tmRing struct {
-	list [tm_SLOT]list.List
+	hash [tm_SLOT]list.List
 	
 	current uint
 	idx 	uint // ring index
 	
-	clock 	*Clock
+	clock 	*tmClock
 }
 
-func (me *tmRing) Init(idx uint, clock *Clock) {
+func (me *tmRing) init(idx uint, clock *tmClock) {
 	me.idx 		= idx
 	me.clock 	= clock
 	me.current 	= 0
 	
 	for i:=uint(0); i<tm_SLOT; i++ {
-		me.List(i).Init()
+		me.list(i).Init()
 	}
 }
 
-func (me *tmRing) List(slot uint) *list.List {
-	return &me.list[slot]
+func (me *tmRing) list(slot uint) *list.List {
+	return &me.hash[slot]
 }
 
-func (me *tmRing) IsDebug() bool {
-	return me.clock.IsDebug()
+func (me *tmRing) isDebug() bool {
+	return me.clock.debug
 }
 
 func (me *tmRing) dumpList(slot uint, action string) {
-	if Len := me.List(slot).Len(); Len > 0 && me.IsDebug() {
-		for e := me.List(slot).Front(); e != nil; e = e.Next() {
-			if t, ok := e.Value.(*Timer); ok {
+	if Len := me.list(slot).Len(); Len > 0 && me.isDebug() {
+		for e := me.list(slot).Front(); e != nil; e = e.Next() {
+			if t, ok := e.Value.(*tmTimer); ok {
 				t.dump(action)
 			}
 		}
@@ -224,14 +260,14 @@ func (me *tmRing) dump(action string) {
 	}
 }
 
-func (me *tmRing) trigger() uint {
+func (me *tmRing) __trigger() uint {
 	count := uint(0)
 	
 	var next *list.Element
-	for e := me.List(me.current).Front(); e != nil; e = next {
+	for e := me.list(me.current).Front(); e != nil; e = next {
 		next = e.Next()
 		
-		t, ok := e.Value.(*Timer)
+		t, ok := e.Value.(*tmTimer)
 		if !ok {
 			continue
 		}
@@ -244,7 +280,7 @@ func (me *tmRing) trigger() uint {
 			continue
 		}
 		
-		if safe, err := t.cb(t.father); nil==err {
+		if safe, err := t.cb(t.proxy); nil==err {
 			count++
 		} else if !safe {
 			continue
@@ -259,54 +295,43 @@ func (me *tmRing) trigger() uint {
 	return count
 }
 
-func (me *tmRing) Trigger() uint {
+func (me *tmRing) trigger() uint {
 	count := uint(0)	
 	
 	me.current++
 	me.current &= tm_MASK
 	
-	count += me.trigger()
+	count += me.__trigger()
 	
 	if idx := me.idx; 0==me.current && idx < tm_RINGMAX {
-		r := me.clock.ringX(idx)
-		
-		count += r.trigger()
+		count += me.clock.ringX(idx).__trigger()
 	}
 	
 	return count
 }
 
-type Clock struct {
+type tmClock struct {
 	init 	bool
 	ticks 	uint64
 	
 	ring 	[tm_RING]tmRing
 	unit 	uint
-	Type 	uint
-	debug 	*bool
+	debug 	bool
 }
 
-func (me *Clock) ringX(idx uint) *tmRing {
+func (me *tmClock) ringX(idx uint) *tmRing {
 	return &me.ring[idx]
 }
 
-func (me *Clock) ring0() *tmRing {
-	return me.ringX(0)
-}
-
-func (me *Clock) ringMax() *tmRing {
-	return me.ringX(tm_RINGMAX)
-}
-
-func (me *Clock) Ticks() uint64 {
+func (me *tmClock) Ticks() uint64 {
 	return me.ticks
 }
 
-func (me *Clock) GetUnit() uint {
+func (me *tmClock) Unit() uint {
 	return me.unit
 }
 
-func (me *Clock) Trigger(times uint) uint {
+func (me *tmClock) Trigger(times uint) uint {
 	count := uint(0)
 	
 	me.dump("dump")
@@ -314,94 +339,89 @@ func (me *Clock) Trigger(times uint) uint {
 	for i:=uint(0); i<times; i++ {
 		me.ticks++
 		
-		count += me.ring0().Trigger()
+		count += me.ringX(0).trigger()
 	}
 	
 	return count
 }
 
-func getTimer(entry interface{}, tidx uint) *Timer {
-	var t *Timer
+func getTimer(entry interface{}, tidx uint) ITimer {
+	var t ITimer
 	
-	if iTimer, ok := entry.(ITimer); !ok {
+	if proxy, ok := entry.(ITimerProxy); !ok {
 		return nil
-	} else if t = iTimer.GetTimer(tidx); nil==t {
+	} else if t = proxy.Get(tidx); nil==t {
 		return nil
 	}
 	
 	return t
 }
 
-func (me *Clock) Insert(
-		entry interface{},
+func (me *tmClock) Insert(
+		proxy ITimerProxy,
 		tidx uint, // timer index
 		after uint, // ms
 		cb TimerCallback, 
-		Cycle bool) (*Timer, error) {
+		cycle bool) (ITimer, error) {
 	if nil==me {
 		return nil, ErrNilObj
 	}
 	
-	if nil==entry {
+	if nil==proxy {
 		return nil, ErrNilObj
 	}
 	
 	if nil==cb {
 		return nil, ErrNilObj
 	}
-	
-	t := getTimer(entry, tidx)
-	if nil==t {
-		return nil, ErrBadIntf
-	}
-	
-	if t.IsPending() {
-		return nil, ErrPending
+		
+	if nil!=getTimer(proxy, tidx) {
+		return nil, ErrExist
 	}
 	
 	flag := uint(0)
-	if Cycle {
+	if cycle {
 		flag = tm_CYCLE
 	}
 	
-	t.cb 		= cb
-	t.tidx 		= tidx
-	t.create	= me.ticks
-	t.expires	= after/me.unit // ms==>ticks
-	t.flag 		= flag
-	t.clock 	= me
-	t.father	= entry
+	timer := &tmTimer{
+		cb:		cb,
+		create:	me.ticks,
+		expires:after/me.unit, // ms==>ticks
+		flag:	flag,
+		clock:	me,
+	}
 	
-	t.insert()
+	timer.bind(tidx, proxy)
+	timer.insert()
 	
-	return t, nil
+	return timer, nil
 }
 
-func (me *Clock) IsDebug() bool {
-	return *me.debug
+func (me *tmClock) Debug(debug bool) {
+	me.debug = debug
 }
 
-func (me *Clock) dump(action string) {
-	if me.IsDebug() {
+func (me *tmClock) dump(action string) {
+	if me.debug {
 		fmt.Println("======================")
 		for i:=uint(0); i<tm_RING; i++ {
 			me.ringX(i).dump(action)
 		}
-		
 		fmt.Println("======================")
 	}
 }
 
-func TmClock(unit uint/* ms */, debug *bool) *Clock {
-	c := &Clock{
-		debug:debug,
+func TmClock(unit uint/* ms */) IClock {
+	c := &tmClock{
 		unit:unit,
 	}
 	
 	for i:=uint(0); i<tm_RING; i++ {
-		c.ringX(i).Init(i, c)
+		c.ringX(i).init(i, c)
 	}
 	
 	fmt.Println("clock create")
+	
 	return c
 }

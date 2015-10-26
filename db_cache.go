@@ -77,7 +77,7 @@ type dbcache struct {
 	DbCachePire
 	
 	ref 	uint
-	timer 	[DB_CACHE_TIMER_END]Timer
+	timer 	[DB_CACHE_TIMER_END]ITimer
 	
 	SDB 	*DbCache
 }
@@ -93,16 +93,20 @@ func (me *dbcache) Name(tidx uint) string {
 	return name
 }
 
-func (me *dbcache) GetTimer(tidx uint) *Timer {
-	return &me.timer[tidx]
+func (me *dbcache) Get(tidx uint) ITimer {
+	return me.timer[tidx]
 }
 
-func (me *dbcache) holder() *Timer {
-	return &me.timer[DB_CACHE_TIMER_HOLD]
+func (me *dbcache) Bind(tidx uint, timer ITimer) {
+	me.timer[tidx] = timer
 }
 
-func (me *dbcache) idler() *Timer {
-	return &me.timer[DB_CACHE_TIMER_IDLE]
+func (me *dbcache) holder() ITimer {
+	return me.timer[DB_CACHE_TIMER_HOLD]
+}
+
+func (me *dbcache) idler() ITimer {
+	return me.timer[DB_CACHE_TIMER_IDLE]
 }
 
 func (me *dbcache) delete() {
@@ -122,10 +126,9 @@ type DbCache struct {
 	DbCacheOps
 	
 	Ch 		chan DbCacheRequest
-	Debug 	bool
 	
 	cache 	map[interface{}]*dbcache
-	clock 	*Clock
+	clock 	IClock
 }
 
 func (me *DbCache) handle (q *DbCacheRequest) {
@@ -170,7 +173,8 @@ func (me *DbCache) hold (q *DbCacheRequest, p *DbCacheResponse) {
 		// when hold
 		// insert hold timer
 		// update idle timer
-		me.clock.Insert(sdb, DB_CACHE_TIMER_HOLD, me.Hold, holdTimeout, true)
+		sdb.timer[DB_CACHE_TIMER_HOLD], _ =
+			me.clock.Insert(sdb, DB_CACHE_TIMER_HOLD, me.Hold, holdTimeout, true)
 		sdb.idler().Change(me.Idle)
 	}
 }
@@ -206,7 +210,8 @@ func (me *DbCache) create (q *DbCacheRequest, p *DbCacheResponse) {
 		
 		// when create
 		// insert idle timer
-		me.clock.Insert(sdb, DB_CACHE_TIMER_IDLE, me.Idle, idleTimeout, true)
+		sdb.timer[DB_CACHE_TIMER_IDLE], _ =
+			me.clock.Insert(sdb, DB_CACHE_TIMER_IDLE, me.Idle, idleTimeout, true)
 		me.cache[q.Key] = sdb
 	}
 }
@@ -237,21 +242,21 @@ func (me *DbCache) update (q *DbCacheRequest, p *DbCacheResponse) {
 	}
 }
 
-func idleTimeout(entry interface{}) (bool, error) {
-	sdb, ok := entry.(*dbcache)
+func idleTimeout(proxy ITimerProxy) (bool, error) {
+	sdb, ok := proxy.(*dbcache)
 	if !ok {
 		return true, ErrBadType
 	}
 	
-	Log.Info("sdb %v idle timeout", entry)
+	Log.Info("sdb %v idle timeout", sdb)
 	
 	sdb.delete()
 	
 	return false, nil
 }
 
-func holdTimeout(entry interface{}) (bool, error) {
-	sdb, ok := entry.(*dbcache)
+func holdTimeout(proxy ITimerProxy) (bool, error) {
+	sdb, ok := proxy.(*dbcache)
 	if !ok {
 		return true, ErrBadType
 	}
@@ -259,7 +264,7 @@ func holdTimeout(entry interface{}) (bool, error) {
 	sdb.holder().Remove()
 	sdb.ref = 0
 	
-	Log.Info("sdb %v hold timeout", entry)
+	Log.Info("sdb %v hold timeout", sdb)
 	
 	return false, nil
 }
@@ -268,7 +273,7 @@ func (me *DbCache) init () {
 	me.Ch = make(chan DbCacheRequest, me.Max/100)
 	me.cache = make(map[interface{}]*dbcache, me.Max)
 	
-	me.clock = TmClock(me.Unit, &me.Debug)
+	me.clock = TmClock(me.Unit)
 	
 	Log.Info("sdb init")
 }

@@ -8,21 +8,25 @@ import (
 )
 
 type Entry struct {
-	Timer
+	timer ITimer
 	
 	number int
 }
 
-func (me *Entry) GetTimer(tidx uint) *Timer {
-	return &me.Timer
+func (me *Entry) Get(tidx uint) ITimer {
+	return me.timer
+}
+
+func (me *Entry) Bind(tidx uint, timer ITimer) {
+	me.timer = timer
 }
 
 func (me *Entry) Name(tidx uint) string {
 	return Itoa(me.number)
 }
 
-func EntryCallback(entry interface{}) (bool, error) {
-	e, ok := entry.(*Entry)
+func EntryCallback(proxy ITimerProxy) (bool, error) {
+	e, ok := proxy.(*Entry)
 	if !ok {
 		return true, ErrBadType
 	}
@@ -34,15 +38,15 @@ func EntryCallback(entry interface{}) (bool, error) {
 
 const count = 100*1000
 const ms = 1000
-var debug = false
-var clock = TmClock(ms, &debug)
+var clock = TmClock(ms)
 var entry = [count]Entry{}
 
 func testInit() {	
 	for i:=0; i<count; i++ {
 		entry[i].number = i
 		
-		clock.Insert(&entry[i], 0, ms*uint(i), EntryCallback, true)
+		entry[i].timer, _ =
+			clock.Insert(&entry[i], 0, ms*uint(i), EntryCallback, true)
 	}
 }
 
