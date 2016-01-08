@@ -1,22 +1,25 @@
 package asdf
+/*
+lixiao 2016/1/8
+*/
 
 import (
-	. "fmt"
 	"time"
 )
 
+//hour表示每天第几个小时，mint表示每个小时第几分钟
 func Timer_per_day(hour int, mint int) <-chan time.Time {
 	ch := make(chan time.Time)
 	go run_per_day(ch, hour, mint)
 	return ch
 }
-
+//day表示每月几号
 func Timer_per_month(day int) <-chan time.Time {
 	ch := make(chan time.Time)
 	go run_per_month(ch, day)
 	return ch
 }
-
+//weekday表示每周几
 func Timer_per_week(weekday int) <-chan time.Time {
 	ch := make(chan time.Time)
 	go run_per_week(ch, weekday)
@@ -88,10 +91,10 @@ func run_per_month(ch chan time.Time, d int) {
 
 /*
 func main() {
-	//ch := timer_per_month(1)
+	//ch := Timer_per_month(1)
 	Println(time.Now())
-	//ch := timer_per_month(1)
-	ch := timer_per_week(1)
+	//ch := Timer_per_month(1)
+	ch := Timer_per_week(1)
 	t := <-ch
 	Println("Now time is", t)
 	Println("True time is", time.Now())
